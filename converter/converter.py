@@ -1,202 +1,227 @@
-import argparse
+import os
 import re 
-import unicodedata
-from typing import Tuple, List
-from pathlib import Path
-
-from parsers.object import parse_dynamic_object_line, SampObject
-from parsers.material import parse_material_line
-from parsers.material_text import parse_material_text_line
-from parsers.removals import parse_building_removal_line, SampBuildingRemoval
-
-path = Path(__file__).parent.parent
-
-parser = argparse.ArgumentParser(description="Convert streamer map files to samp-mapparser format.")
-parser.add_argument(
-    "-i", "--input",
-    help="Input directory containing map files",
-    type=str,
-    default=str(path / 'map_sources')
-)
-parser.add_argument(
-    "-o", "--output",
-    help="Output directory for converted maps",
-    type=str,
-    default=str(path / 'scriptfiles' / 'maps')
-)
-parser.add_argument(
-    "--input-ext",
-    help="Input file extension",
-    type=str,
-    default=".txt"
-)
-parser.add_argument(
-    "--output-ext",
-    help="Output file extension",
-    type=str,
-    default=".txt"
-)
-parser.add_argument(
-    "--file",
-    help="Process only a single file instead of directory",
-    type=str
-)
-parser.add_argument(
-    "--interior",
-    help="Override interior ID for all objects",
-    type=int,
-    default=None
-)
-parser.add_argument(
-    "--world",
-    help="Override world ID for all objects",
-    type=int,
-    default=None
-)
-parser.add_argument(
-    "--priority",
-    help="Override priority for all objects",
-    type=int,
-    default=None
-)
-args = parser.parse_args()
-
-input_directory = Path(args.input)
-output_directory = Path(args.output)
-map_input_file_extension = args.input_ext
-map_output_file_extension = args.output_ext
+path = os.getcwd()
 
 
-def parse_map(map_input_file: Path) -> Tuple[List[SampBuildingRemoval], List[SampObject]]:
-    """Parse a map file and return buildings and objects."""
-    try:
-        with open(map_input_file, 'r', encoding='utf-8') as file:
-            buildings = []
-            objects = []
-            
-            for line_number, line in enumerate(file, 1):
-                try:
-                    line = re.sub(r'//.*', '', line).strip()
-                    if not line:
-                        continue
-                        
-                    if 'CreateDynamicObject(' in line:
-                        obj = parse_dynamic_object_line(line)
-                        if obj:
-                            objects.append(obj)
-                    elif 'SetDynamicObjectMaterial(' in line:
-                        material = parse_material_line(line)
-                        if material:
-                            objects[-1].materials.append(material)
-                    elif 'SetDynamicObjectMaterialText(' in line:
-                        text = parse_material_text_line(line)
-                        if text:
-                            objects[-1].materialtext.append(text)
-                    elif 'RemoveBuildingForPlayer(' in line:
-                        building = parse_building_removal_line(line)
-                        buildings.append(building)
-                    else:
-                        # Ignore lines that don't need to be parsed
-                        continue
-                except Exception as e:
-                    print(f"Error processing line {line_number}: {e}")
-                    
-            return buildings, objects
-    except Exception as e:
-        print(f"Failed to parse map file {map_input_file}: {e}")
-        raise
-
-def write_converted_map(map_output_file: Path, buildings, objects):
-    try:
-        with open(map_output_file, 'a+') as file_output_handler:
-            # Write building removal data
-            for building in buildings:
-                file_output_handler.write(
-                    f'rmv {building.remove_modelid} {building.remove_x:.6f} {building.remove_y:.6f} {building.remove_z:.6f} {building.remove_radius:.2f}\n'
-                )
-
-            # Write mapped objects
-            for obj in objects:
-                file_output_handler.write(
-                    f'{obj.modelid} {obj.x:.6f} {obj.y:.6f} {obj.z:.6f} {obj.rx:.6f} {obj.ry:.6f} {obj.rz:.6f} {obj.worldid} {obj.interior} {obj.player} {obj.streamdist:.6f} {obj.drawdist:.6f} {obj.areaid} {obj.priority}\n'
-                )
-
-                if len(obj.materials) > 0:
-                    for material in obj.materials:
-                        file_output_handler.write(
-                            f'mat {material.material_index} {material.material_model} {material.material_txd} {material.material_texture} {material.material_color}\n'
-                        )
-
-                if len(obj.materialtext) > 0:
-                    for text in obj.materialtext:
-                        file_output_handler.write(
-                            f'txt {text.text_index} {text.text_materialsize} {text.text_font} {text.text_fontsize} {text.text_bold} {text.text_fontcolor} {text.text_backgroundcolor} {text.text_alignment} {text.text_contents}\n'
-                        )
-    except Exception as e:
-        print(f"Failed to write converted map to {map_output_file}: {e}")
-        raise
+class samp_object_material():
+    material_index: int
+    material_model: int
+    material_txd: str
+    material_texture: str
+    material_color: str
 
 
-def convert_map(map_name: str):
-    # Convert map_name to ANSI-compatible format as samp may struggle
-    map_name_normalized = unicodedata.normalize('NFKD', map_name).encode('ASCII', 'ignore').decode('ASCII')
-    map_name_ansi = re.sub(r'[^\w.-]', '', map_name_normalized.replace(' ', '_'))
+class samp_object_material_text():
+    text_index: int
+    text_contents: str
+    text_materialsize: int
+    text_font: str
+    text_fontsize: int
+    text_bold: int
+    text_fontcolor: str
+    text_backgroundcolor: str
+    text_alignment: int
 
-    map_input_file = Path(input_directory) / (map_name + map_input_file_extension)
-    map_output_file = output_directory / (map_name_ansi + map_output_file_extension)
 
+class samp_building_removal():
+    remove_modelid: int
+    remove_x: float
+    remove_y: float
+    remove_z: float
+    remove_radius: float
+
+
+class samp_object():
+    def __init__(self):
+        self.materials = []
+        self.materialtext = []
+
+    modelid: int
+    x: float
+    y: float
+    z: float
+    rx: float
+    ry: float
+    rz: float
+    worldid: int
+    interior: int
+    player: int
+    streamdist: float
+    drawdist: float
+    areaid: int
+    priority: int
+    materials: list
+    materialtext: list
+    isdoor: bool
+
+
+newworldid = -1
+interior = -1
+player = -1
+streamdist = 300.0
+drawdist = 300.0
+areaid = -1
+priority = 0
+mapname = ""
+
+
+def convert():
     # delete output file if it already exists so we don't overwrite or append to converted map data
-    if map_output_file.is_file():
-        map_output_file.unlink()
+    if os.path.isfile(f'{path}/{mapname}') is True:
+        os.remove(f'{path}/{mapname}')
 
-    buildings, objects = parse_map(map_input_file)
-    
-    # Custom parameters if specified
-    if args.interior is not None:
-        for obj in objects:
-            obj.interior = args.interior
-    
-    if args.world is not None:
-        for obj in objects:
-            obj.worldid = args.world
-    
-    if args.priority is not None:
-        for obj in objects:
-            obj.priority = args.priority
-    
-    output_directory.mkdir(parents=True, exist_ok=True)
-    write_converted_map(map_output_file, buildings, objects)
-    
-    print(f'The converted map has been written to: {map_output_file}')
+    input = open('input.txt', 'r', encoding='latin-1')
+    objects = []
+    buildings = []
 
+    for line in input:
+        if line.find('CreateDynamicObject(') != -1:
+            line = re.sub('^.*CreateDynamicObject\(', '', line)
+            line = re.sub('\);(w+)?', '', line)
+            params = line.split(', ')
 
-def convert_dir(directory: Path) -> None:
-    """Convert all map files in directory."""
-    converted_count = 0
-    error_count = 0
-    try:
-        for file_path in directory.glob(f"*{map_input_file_extension}"):
-            print(f'Converting: {file_path.name}')
+            object = samp_object()
+            object.modelid = int(params[0])
+            object.x = float(params[1])
+            object.y = float(params[2])
+            object.z = float(params[3])
+            object.rx = float(params[4])
+            object.ry = float(params[5])
+            object.rz = float(params[6])
             try:
-                convert_map(file_path.stem)
-                converted_count += 1
-            except Exception as e:
-                print(f"Error converting {file_path.name}: {e}")
-                error_count += 1
-    except Exception as e:
-        print(f"Failed to convert directory {directory}: {e}")
-        raise
-    finally:
-        print(f"Conversion completed. Total maps converted: {converted_count}")
-        if error_count > 0:
-            print(f"Total errors encountered: {error_count}")
+                object.worldid = newworldid if newworldid != -5 else (-1 if params[7] is None else int(params[7]))
+            except IndexError:
+                object.worldid = newworldid if newworldid != -5 else -1
 
-if args.file:
-    file_path = Path(args.file)
-    if not file_path.is_file():
-        print(f"Error: File not found - {file_path}")
-    else:
-        print(f'Converting single file: {file_path.name}')
-        convert_map(file_path.stem)
+            try:
+                object.interior = newinteriorid if newinteriorid != -5 else (-1 if params[8] is None else int(params[8]))
+            except IndexError:
+                object.interiorid = newinteriorid if newinteriorid != -5 else -1
+
+            object.player = player if len(params) <= 9 else int(params[9])
+            object.streamdist = streamdist if len(params) <= 10 else float(params[10])
+            object.drawdist = drawdist if len(params) <= 11 else float(params[11])
+            object.areaid = areaid if len(params) <= 12 else int(params[12])
+            object.priority = priority if len(params) <= 13 else int(params[13])
+
+            objects.append(object)
+        elif line.find('SetDynamicObjectMaterial(') != -1:
+            line = re.sub('^.*SetDynamicObjectMaterial\(([^,]+),', '', line)
+            line = re.sub('\);(w+)?', '', line)
+            params = line.split(', ')
+
+            material = samp_object_material()
+            material.material_index = int(params[0])
+            material.material_model = int(params[1])
+            material.material_txd = params[2]
+            material.material_texture = params[3]
+            material.material_color = params[4]
+
+            # remove quotation marks from txd and texture name since the map script doesn't parse them
+            material.material_txd = material.material_txd.replace('"', '')
+            material.material_texture = material.material_texture.replace('"', '')
+
+            # sanitize some of the received map data so we don't have to do it when outputting compatible map code
+            if material.material_model == 16644 and material.material_txd == 'a51_detailstuff' and material.material_texture == 'roucghstonebrtb':
+                # this is a transparent texture that doesn't appear correctly inside of interior worlds, we don't want this guy
+                material.material_model = 18888
+                material.material_txd = "forcefields"
+                material.material_texture = "white"
+
+            if material.material_texture.find(' ') != -1:
+                # material has a space in it, replace it with an amazing key word for the map script to identify
+                material.material_texture = material.material_texture.replace(' ', 'putafuckingspacehere')
+
+            object = objects[len(objects) - 1]
+            object.materials.append(material)
+        elif line.find('SetDynamicObjectMaterialText(') != -1:
+            line = re.sub('^.*SetDynamicObjectMaterialText\(([^,]+),', '', line)
+            line = re.sub('\);(w+)?', '', line)
+            params = line.split(', ')
+
+            if len(params) != 9:
+                print(f'Expected 9 params when parsing SetDynamicObjectMaterialText but found {len(params)}. Ending conversion.')
+                return
+
+            text = samp_object_material_text()
+            text.text_index = int(params[0])
+            text.text_contents = params[1]
+            text.text_materialsize = int(params[2])
+            text.text_font = params[3]
+            text.text_fontsize = int(params[4])
+            text.text_bold = int(params[5])
+            text.text_fontcolor = params[6]
+            text.text_backgroundcolor = params[7]
+            text.text_alignment = int(params[8])
+
+            # sanitize some of the received map data so we don't have to do it when outputting rcrp-compatible map code
+            text.text_font = text.text_font.replace(' ', '_')
+            text.text_font = text.text_font.replace('"', '')
+            text.text_contents = text.text_contents.replace('"', '')
+            text.text_contents = text.text_contents.replace('\n', '~N~')
+
+            object = objects[len(objects) - 1]
+            object.materialtext.append(text)
+        elif line.find('RemoveBuildingForPlayer(') != -1:
+            line = line.replace('RemoveBuildingForPlayer(playerid,', '')
+            line = line.replace(');\n', '')
+            params = line.split(', ')
+
+            building = samp_building_removal()
+            building.remove_modelid = int(params[0])
+            building.remove_x = float(params[1])
+            building.remove_y = float(params[2])
+            building.remove_z = float(params[3])
+            building.remove_radius = float(params[4])
+
+            buildings.append(building)
+        else:  # useless line that doesn't need to be parsed. probably comments or variable assignments that can safely be ignored
+            continue
+    input.close()
+
+    output = open(mapname, 'a+')
+    for building in buildings:
+        output.write(f'rmv {building.remove_modelid} {building.remove_x:.6f} {building.remove_y:.6f} {building.remove_z:.6f} {building.remove_radius:.2f}\n')
+
+    for object in objects:
+        output.write(f'{object.modelid} {object.x:.6f} {object.y:.6f} {object.z:.6f} {object.rx:.6f} {object.ry:.6f} {object.rz:.6f} {object.worldid} {object.interior} {object.player} {object.streamdist:.6f} {object.drawdist:.6f} {object.areaid} {object.priority}\n')
+
+        if len(object.materials) > 0:
+            for material in object.materials:
+                output.write(f'mat {material.material_index} {material.material_model} {material.material_txd} {material.material_texture} {material.material_color}\n')
+
+        if len(object.materialtext) > 0:
+            for text in object.materialtext:
+                output.write(f'txt {text.text_index} {text.text_materialsize} {text.text_font} {text.text_fontsize} {text.text_bold} {text.text_fontcolor} {text.text_backgroundcolor} {text.text_alignment} {text.text_contents}\n')
+    output.close()
+    print(f'The converted map has been written to {mapname}!')
+
+
+# make sure input file actually exists before we do anything
+if os.path.isfile(f'{path}/input.txt') is False:
+    print("Input file doesn't exist.")
+    exit()
+
+# make sure the input file isn't empty
+if os.stat(f'{path}/input.txt').st_size == 0:
+    print("Input file is empty.")
+    exit()
+
+
+mapname = input("Enter a name for the converted map file (be sure to include desired file extension): ") or "output.txt"
+if mapname == "output.txt":
+    print("No map name supplied. Defaulting to output.txt")
 else:
-    convert_dir(input_directory)
+    mapname = f'{mapname}'
+
+newworldid = int(input("Enter the desired world ID of the new map (leave blank for all worlds/the worlds already specified in the input file): ") or -5)
+if newworldid < -1:
+    print("No map worldid supplied. The map's world IDs will be inherited from the code inside of the input file.")
+
+
+newinteriorid = int(input("Enter the desired interior ID of the new map (leave blank for all interiors already specified in the input file): ") or -5)
+if newinteriorid < -1:
+    print("No map interiorid supplied. The map's interior IDs will be inherited from the code inside of the input file.")
+
+convert()
+
