@@ -105,7 +105,7 @@ stock ProcessMaps()
 
 	if(!dir_exists(MAP_FILE_DIRECTORY))
 	{
-		printf("[MAP PARSER] Map directory (%s) was not found. Creating directory and cancelling loading.", MAP_FILE_DIRECTORY);
+		printf("[MAP PARSER] Couldn't find map folder (%s). Creating it now and skipping load.", MAP_FILE_DIRECTORY);
 		ProcessingMaps = false;
 		dir_create(MAP_FILE_DIRECTORY);
 		return true;
@@ -124,7 +124,7 @@ stock ProcessMaps()
 	dir_close(MapsDir);
 
 	new mapcount = pool_size(Maps);
-	printf("[MAP PARSER] Successfully loaded %i %s. [%ims, %i objects, %i removed buildings]\n", mapcount, mapcount == 1 ? "map" : "maps", GetTickCount() - InitialTicks, CountMapObjects(), CountRemovedBuildings());
+	printf("[MAP PARSER] Loaded %i %s. [%ims, %i objects, %i removed buildings]\n", mapcount, mapcount == 1 ? "map" : "maps", GetTickCount() - InitialTicks, CountMapObjects(), CountRemovedBuildings());
 	ProcessingMaps = false;
 	return true;
 }
@@ -144,7 +144,7 @@ stock LoadMap(mapname[])
 	new mapid = GetMapIDFromName(map[MapName]);
 	if(mapid != INVALID_MAP_ID)
 	{
-		printf("[MAP PARSER] Attempted to load map '%s' while it was already loaded.", mapname);
+		printf("[MAP PARSER] '%s' is already loaded, skipping.", mapname);
 		return mapid;
 	}
 
@@ -217,7 +217,7 @@ stock LoadMap(mapname[])
 
 	if(list_size(map[MapObjects]) == 0)
 	{
-		printf("[MAP PARSER] %s did not contain any valid objects.", mapname);
+		printf("[MAP PARSER] No valid objects found in %s.", mapname);
 		pool_remove_deep(Maps, mapindex);
 	}
 	else
@@ -344,7 +344,7 @@ stock GetMapList(String:string, bool:order = false)
 {
 	if(!pool_valid(Maps))
 	{
-		print("[MAP PARSER] Could not format map list because no maps are loaded.");
+		print("[MAP PARSER] No maps are loaded, can't build the list.");
 		return false;
 	}
 
@@ -390,13 +390,13 @@ stock ExportMap(mapid)
 {
 	if(!pool_valid(Maps))
 	{
-		printf("[MAP PARSER] Unable to export map %i due to no maps currently being loaded.", mapid);
+		printf("[MAP PARSER] Can't export map %i, nothing is loaded right now.", mapid);
 		return false;
 	}
 
 	if(!pool_has(Maps, mapid))
 	{
-		printf("[MAP PARSER] Unable to export map ID %i. Invalid ID.", mapid);
+		printf("[MAP PARSER] Map ID %i doesn't exist.", mapid);
 		return false;
 	}
 
@@ -600,103 +600,91 @@ static stock CountRemovedBuildings()
 
 stock StartAutoLoadMaps(interval = 5000)
 {
-    if(g_AutoLoadTimer != -1)
-    {
-        printf("[MAP PARSER] AutoLoad sudah berjalan (interval: %ims). Hentikan dulu sebelum memulai ulang.", g_AutoLoadInterval);
-        return false;
-    }
+	if(g_AutoLoadTimer != -1)
+	{
+		printf("[MAP PARSER] AutoLoad is already running (interval: %ims). Stop it first before restarting.", g_AutoLoadInterval);
+		return false;
+	}
 
-    g_AutoLoadInterval = interval;
-    g_AutoLoadTimer = SetTimer("_MAP_AutoLoadTick", interval, true);
-    printf("[MAP PARSER] AutoLoad dimulai. Interval: %ims", interval);
-    return true;
+	g_AutoLoadInterval = interval;
+	g_AutoLoadTimer = SetTimer("_MAP_AutoLoadTick", interval, true);
+	printf("[MAP PARSER] AutoLoad started. Checking every %ims.", interval);
+	return true;
 }
 
-/**
- * Hentikan auto load map.
- */
 stock StopAutoLoadMaps()
 {
-    if(g_AutoLoadTimer == -1)
-    {
-        print("[MAP PARSER] AutoLoad tidak sedang berjalan.");
-        return false;
-    }
+	if(g_AutoLoadTimer == -1)
+	{
+		print("[MAP PARSER] AutoLoad isn't running.");
+		return false;
+	}
 
-    KillTimer(g_AutoLoadTimer);
-    g_AutoLoadTimer = -1;
-    print("[MAP PARSER] AutoLoad dihentikan.");
-    return true;
+	KillTimer(g_AutoLoadTimer);
+	g_AutoLoadTimer = -1;
+	print("[MAP PARSER] AutoLoad stopped.");
+	return true;
 }
 
-/**
- * Cek apakah auto load sedang aktif.
- */
 stock IsAutoLoadRunning()
 {
-    return (g_AutoLoadTimer != -1);
+	return (g_AutoLoadTimer != -1);
 }
 
-/**
- * Scan direktori dan muat semua file map baru yang belum ter-load.
- * Bisa dipanggil manual atau otomatis lewat timer.
- * Mengembalikan jumlah map baru yang berhasil dimuat.
- */
 stock AutoLoadMaps()
 {
-    if(!dir_exists(MAP_FILE_DIRECTORY))
-    {
-        printf("[MAP PARSER] [AutoLoad] Direktori '%s' tidak ditemukan.", MAP_FILE_DIRECTORY);
-        return 0;
-    }
+	if(!dir_exists(MAP_FILE_DIRECTORY))
+	{
+		printf("[MAP PARSER] [AutoLoad] Folder '%s' not found.", MAP_FILE_DIRECTORY);
+		return 0;
+	}
 
-    new dir:MapsDir = dir_open(MAP_FILE_DIRECTORY);
-    new fname[MAX_MAP_NAME], ftype;
-    new loaded = 0, skipped = 0, failed = 0;
-    new cleanname[MAX_MAP_NAME];
+	new dir:MapsDir = dir_open(MAP_FILE_DIRECTORY);
+	new fname[MAX_MAP_NAME], ftype;
+	new loaded = 0, skipped = 0, failed = 0;
+	new cleanname[MAX_MAP_NAME];
 
-    while(dir_list(MapsDir, fname, ftype))
-    {
-        if(ftype == FM_DIR) continue;
-        if(strfind(fname, MAP_FILE_EXTENSION) == -1) continue;
+	while(dir_list(MapsDir, fname, ftype))
+	{
+		if(ftype == FM_DIR) continue;
+		if(strfind(fname, MAP_FILE_EXTENSION) == -1) continue;
 
-        format(cleanname, sizeof(cleanname), fname);
-        strreplace(cleanname, MAP_FILE_EXTENSION, "", false, 0, -1, MAX_MAP_NAME);
+		format(cleanname, sizeof(cleanname), fname);
+		strreplace(cleanname, MAP_FILE_EXTENSION, "", false, 0, -1, MAX_MAP_NAME);
 
-        if(GetMapIDFromName(cleanname) != INVALID_MAP_ID)
-        {
-            skipped++;
-            continue;
-        }
+		if(GetMapIDFromName(cleanname) != INVALID_MAP_ID)
+		{
+			skipped++;
+			continue;
+		}
 
-        new mapid = LoadMap(fname);
-        if(mapid != INVALID_MAP_ID)
-        {
-            printf("[MAP PARSER] [AutoLoad] Map baru dimuat: '%s' (ID: %i)", cleanname, mapid);
-            loaded++;
-        }
-        else
-        {
-            printf("[MAP PARSER] [AutoLoad] Gagal memuat map: '%s'", cleanname);
-            failed++;
-        }
-    }
-    dir_close(MapsDir);
+		new mapid = LoadMap(fname);
+		if(mapid != INVALID_MAP_ID)
+		{
+			printf("[MAP PARSER] [AutoLoad] Picked up new map: '%s' (ID: %i)", cleanname, mapid);
+			loaded++;
+		}
+		else
+		{
+			printf("[MAP PARSER] [AutoLoad] Failed to load: '%s'", cleanname);
+			failed++;
+		}
+	}
+	dir_close(MapsDir);
 
-    if(loaded > 0 || failed > 0)
-    {
-        printf("[MAP PARSER] [AutoLoad] Selesai. Dimuat: %i | Dilewati: %i | Gagal: %i", loaded, skipped, failed);
-    }
+	if(loaded > 0 || failed > 0)
+	{
+		printf("[MAP PARSER] [AutoLoad] Done. Loaded: %i | Skipped: %i | Failed: %i", loaded, skipped, failed);
+	}
 
-    return loaded;
+	return loaded;
 }
 
 public _MAP_AutoLoadTick()
 {
-    AutoLoadMaps();
+	AutoLoadMaps();
 }
 
-//hooks
 #if defined _ALS_OnPlayerConnect
 	#undef OnPlayerConnect
 #else
